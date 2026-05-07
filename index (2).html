@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → HTML Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface2: #1a1a26;
+  --border: #2a2a3d;
+  --accent: #7c6af7;
+  --accent2: #f76ac8;
+  --accent3: #6af7c0;
+  --text: #e8e8f0;
+  --text-muted: #7878a0;
+  --danger: #f76a6a;
+  --success: #6af7a0;
+  --mono: 'Space Mono', monospace;
+  --serif: 'Lora', Georgia, serif;
+  --radius: 12px;
+  --glow: 0 0 30px rgba(124,106,247,0.15);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Grid noise background ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(124,106,247,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124,106,247,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Layout ── */
+#app {
+  position: relative;
+  z-index: 1;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ── Header ── */
+header {
+  text-align: center;
+  padding: 3rem 0 1rem;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.logo-icon {
+  width: 48px; height: 48px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 0 20px rgba(124,106,247,0.4);
+}
+
+h1 {
+  font-family: var(--mono);
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #fff 30%, var(--accent) 70%, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  letter-spacing: 0.05em;
+}
+
+/* ── Drop zone ── */
+#drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+#drop-zone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(124,106,247,0.05) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+
+#drop-zone:hover::after, #drop-zone.drag-over::after {
+  opacity: 1;
+}
+
+#drop-zone.drag-over { background: var(--surface2); }
+
+.drop-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: block;
+  filter: grayscale(0.3);
+}
+
+.drop-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+
+.drop-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+#file-input { display: none; }
+
+/* ── Status / Progress ── */
+#status-box {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  gap: 1rem;
+  flex-direction: column;
+}
+
+#status-box.visible { display: flex; }
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.status-dot.spinning {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.status-dot.done { background: var(--success); }
+.status-dot.error { background: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.progress-bar-wrap {
+  background: var(--surface2);
+  border-radius: 4px;
+  height: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+#log-lines {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.8;
+  font-family: var(--mono);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+#log-lines .log-ok { color: var(--accent3); }
+#log-lines .log-warn { color: #f7c76a; }
+#log-lines .log-err { color: var(--danger); }
+
+/* ── Preview & Download ── */
+#result-box {
+  display: none;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#result-box.visible { display: flex; }
+
+.result-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  font-size: 0.8rem;
+}
+
+.result-filename {
+  font-weight: 700;
+  color: var(--accent3);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.result-stats {
+  color: var(--text-muted);
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.stat-item { display: flex; align-items: center; gap: 0.35rem; }
+
+.btn-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(124,106,247,0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(124,106,247,0.45);
+}
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ── Preview iframe ── */
+#preview-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+  display: none;
+}
+
+#preview-wrap.visible { display: block; }
+
+#preview-label {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+iframe#preview {
+  width: 100%;
+  height: 520px;
+  border: none;
+  display: block;
+}
+
+/* ── How it works ── */
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.how-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.how-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.how-card:hover { border-color: var(--accent); }
+.how-card:hover::before { opacity: 1; }
+
+.how-num {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--border);
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+
+.how-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.02em;
+}
+
+.how-desc { font-size: 0.75rem; color: var(--text-muted); line-height: 1.6; }
+
+/* ── Footer ── */
+footer {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  line-height: 1.8;
+}
+
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  #app { padding: 1rem 1rem 3rem; }
+  #drop-zone { padding: 2rem 1rem; }
+  iframe#preview { height: 380px; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📄</div>
+    </div>
+    <h1>PDF → HTML Converter</h1>
+    <p class="tagline">// 100% client-side · LaTeX · math rendering · free forever</p>
+  </header>
+
+  <!-- Drop Zone -->
+  <div id="drop-zone" role="button" tabindex="0" aria-label="Upload PDF">
+    <span class="drop-icon">🗂️</span>
+    <div class="drop-title">Drop PDF di sini atau klik untuk pilih</div>
+    <div class="drop-sub">
+      Gratis · Tidak ada upload ke server · Semua proses di browser<br>
+      Mendukung LaTeX math · Heading · Code blocks
+    </div>
+    <input type="file" id="file-input" accept=".pdf">
+  </div>
+
+  <!-- Status -->
+  <div id="status-box">
+    <div class="status-header">
+      <div class="status-dot spinning" id="status-dot"></div>
+      <span id="status-label">Memproses...</span>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="log-lines"></div>
+  </div>
+
+  <!-- Result -->
+  <div id="result-box">
+    <div class="result-meta">
+      <div class="result-filename" id="result-filename">📄 —</div>
+      <div class="result-stats" id="result-stats"></div>
+    </div>
+    <div class="btn-row">
+      <a id="btn-download" class="btn btn-primary" download>
+        ⬇️ Download HTML
+      </a>
+      <button id="btn-preview" class="btn btn-secondary">
+        👁️ Preview
+      </button>
+      <button id="btn-reset" class="btn btn-ghost">
+        🔄 Konversi Lagi
+      </button>
+    </div>
+  </div>
+
+  <!-- Preview -->
+  <div id="preview-wrap">
+    <div id="preview-label">
+      <span>▶</span> PREVIEW — LaTeX akan render saat dibuka di tab baru
+    </div>
+    <iframe id="preview" title="Preview HTML"></iframe>
+  </div>
+
+  <!-- How it works -->
+  <div class="how-grid">
+    <div class="how-card">
+      <div class="how-num">01</div>
+      <div class="how-title">Upload PDF</div>
+      <div class="how-desc">Drag &amp; drop atau klik. File tidak pernah meninggalkan browsermu.</div>
+    </div>
+    <div class="how-card">
+      <div class="how-num">02</div>
+      <div class="how-title">Ekstrak &amp; Parse</div>
+      <div class="how-desc">PDF.js membaca teks, font, ukuran, dan posisi dari tiap halaman.</div>
+    </div>
+    <div class="how-card">
+      <div class="how-num">03</div>
+      <div class="how-title">Deteksi Konten</div>
+      <div class="how-desc">Heading, paragraf, code block, dan LaTeX math dikenali otomatis.</div>
+    </div>
+    <div class="how-card">
+      <div class="how-num">04</div>
+      <div class="how-title">Download HTML</div>
+      <div class="how-desc">Satu file HTML lengkap dengan MathJax. Buka di browser, langsung jalan.</div>
+    </div>
+  </div>
+
+  <footer>
+    100% client-side · Powered by <a href="https://mozilla.github.io/pdf.js/" target="_blank">PDF.js</a> &amp; <a href="https://www.mathjax.org/" target="_blank">MathJax 3</a><br>
+    Tidak ada data dikirim ke server · Source bebas digunakan
+  </footer>
+
+</div>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ─────────────────────────────────────────────
+// DOM REFS
+// ─────────────────────────────────────────────
+const dropZone     = document.getElementById('drop-zone');
+const fileInput    = document.getElementById('file-input');
+const statusBox    = document.getElementById('status-box');
+const statusDot    = document.getElementById('status-dot');
+const statusLabel  = document.getElementById('status-label');
+const progressBar  = document.getElementById('progress-bar');
+const logLines     = document.getElementById('log-lines');
+const resultBox    = document.getElementById('result-box');
+const resultFname  = document.getElementById('result-filename');
+const resultStats  = document.getElementById('result-stats');
+const btnDownload  = document.getElementById('btn-download');
+const btnPreview   = document.getElementById('btn-preview');
+const btnReset     = document.getElementById('btn-reset');
+const previewWrap  = document.getElementById('preview-wrap');
+const previewFrame = document.getElementById('preview');
+
+// ─────────────────────────────────────────────
+// LOGGING HELPERS
+// ─────────────────────────────────────────────
+function log(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = type ? `log-${type}` : '';
+  el.textContent = '> ' + msg;
+  logLines.appendChild(el);
+  logLines.scrollTop = logLines.scrollHeight;
+}
+
+function setProgress(pct) {
+  progressBar.style.width = Math.min(100, pct) + '%';
+}
+
+function setStatus(msg, state = 'loading') {
+  statusLabel.textContent = msg;
+  statusDot.className = 'status-dot';
+  if (state === 'loading') statusDot.classList.add('spinning');
+  else if (state === 'done') statusDot.classList.add('done');
+  else if (state === 'error') statusDot.classList.add('error');
+}
+
+// ─────────────────────────────────────────────
+// DRAG & DROP + FILE INPUT
+// ─────────────────────────────────────────────
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') startConversion(file);
+  else alert('Hanya file PDF yang didukung.');
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) startConversion(fileInput.files[0]);
+});
+
+btnReset.addEventListener('click', () => {
+  statusBox.classList.remove('visible');
+  resultBox.classList.remove('visible');
+  previewWrap.classList.remove('visible');
+  logLines.innerHTML = '';
+  progressBar.style.width = '0%';
+  fileInput.value = '';
+  if (btnDownload.href && btnDownload.href.startsWith('blob:')) {
+    URL.revokeObjectURL(btnDownload.href);
+  }
+});
+
+let previewVisible = false;
+btnPreview.addEventListener('click', () => {
+  previewVisible = !previewVisible;
+  previewWrap.classList.toggle('visible', previewVisible);
+  btnPreview.textContent = previewVisible ? '🙈 Tutup Preview' : '👁️ Preview';
+});
+
+
+// ─────────────────────────────────────────────
+// HELPERS & PATTERNS
+// ─────────────────────────────────────────────
+const CODE_PATTERNS = [
+  /^\s*(def |class |import |from |return |if |else:|elif |for |while |try:|except|with |lambda )/,
+  /^\s*(print\(|len\(|range\(|open\(|self\.|super\()/,
+  /^\s*#.*$/,
+  /[{}\[\]]\s*$/,
+  /^\s*>>>/,
+  /^\s*(var |let |const |function |=>)/,
+  /^\s*<[a-zA-Z/].*>/,
+  /^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP)\b/i,
+];
+
+function isCodeBlock(lines) {
+  if (!lines.length) return false;
+  let score = 0;
+  for (const line of lines.slice(0, 10)) {
+    if (CODE_PATTERNS.some(p => p.test(line))) score++;
+  }
+  return score >= Math.max(1, lines.length * 0.3);
+}
+
+function detectHeadingLevel(text) {
+  const t = text.trim();
+  if (/^Chapter\s+\d+/i.test(t)) return 1;
+  if (/^\d+\.\s+[A-Z]/.test(t)) return 2;
+  if (/^\d+\.\d+\s+[A-Z]/.test(t)) return 3;
+  if (/^[A-Z][A-Z\s]{5,}$/.test(t)) return 2;
+  return null;
+}
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─────────────────────────────────────────────
+// FONT-AWARE MATH DETECTION
+// LaTeX PDFs use special fonts for math characters:
+// CMMI (math italic), CMSY (math symbols), CMEX (large ops),
+// MSAM/MSBM (AMS symbols), LMMI/LMSY (Latin Modern math)
+// ─────────────────────────────────────────────
+const MATH_FONT_RE = /cmmi|cmsy|cmex|msam|msbm|lmmi|lmsy|rsfs|eufm|stixmath|mathit|mathsym|latinmodern.*math|texmath/i;
+
+function isMathFont(fontName) {
+  return fontName ? MATH_FONT_RE.test(fontName) : false;
+}
+
+// Convert a list of PDF.js items (one line) to HTML,
+// wrapping consecutive math-font runs in \(...\)
+function lineItemsToHtml(items) {
+  if (!items || items.length === 0) return '';
+
+  let html = '';
+  let mathBuf = '';
+  let inMath = false;
+
+  function flushMath() {
+    const trimmed = mathBuf.trim();
+    if (trimmed) {
+      html += `<span class="math-inline notranslate" translate="no">\\(${escapeHtml(trimmed)}\\)</span>`;
+    } else {
+      html += escapeHtml(mathBuf);
+    }
+    mathBuf = '';
+    inMath = false;
+  }
+
+  for (const item of items) {
+    const math = isMathFont(item.fontName);
+    if (math) {
+      inMath = true;
+      mathBuf += item.str;
+    } else {
+      if (inMath) flushMath();
+      html += escapeHtml(item.str);
+    }
+  }
+  if (inMath) flushMath();
+
+  return html;
+}
+
+// ─────────────────────────────────────────────
+// FALLBACK: delimiter-based math (for PDFs with \(...\) or $...$)
+// ─────────────────────────────────────────────
+function extractDelimiterMath(text) {
+  const spans = [];
+  const PFX = '\x00M', SFX = '\x00';
+
+  function ph(html) {
+    const i = spans.length;
+    spans.push(html);
+    return `${PFX}${i}${SFX}`;
+  }
+
+  text = text.replace(/\$\$(.+?)\$\$/gs, (_, inner) =>
+    ph(`<span class="math-display-wrap notranslate" translate="no">\\[${inner.trim()}\\]</span>`)
+  );
+  text = text.replace(/\\\[(.+?)\\\]/gs, (_, inner) =>
+    ph(`<span class="math-display-wrap notranslate" translate="no">\\[${inner.trim()}\\]</span>`)
+  );
+  text = text.replace(/\\\((.+?)\\\)/gs, (_, inner) =>
+    ph(`<span class="math-inline notranslate" translate="no">\\(${inner}\\)</span>`)
+  );
+  text = text.replace(/(?<![\\$])\$([^$\n]{1,120}?)(?<!\\)\$/g, (_, inner) =>
+    ph(`<span class="math-inline notranslate" translate="no">\\(${inner}\\)</span>`)
+  );
+
+  let out = escapeHtml(text);
+  spans.forEach((html, i) => { out = out.split(`${PFX}${i}${SFX}`).join(html); });
+  return out;
+}
+
+// ─────────────────────────────────────────────
+// BLOCK CLASSIFICATION
+// ─────────────────────────────────────────────
+function classifyBlock(block) {
+  if (block.type === 'image') { block.cls = 'image'; return block; }
+
+  const text  = block.text;
+  const items = block.items || [];
+  const lines = text.split('\n');
+
+  // 1. Delimiter-based display math
+  if (/\$\$|\\\[/.test(text)) {
+    block.cls = 'math-display'; return block;
+  }
+
+  // 2. Pure math font block (e.g. standalone equation line from LaTeX PDF)
+  const nonSpace = items.filter(it => it.str.trim());
+  if (nonSpace.length > 0 && nonSpace.every(it => isMathFont(it.fontName))) {
+    block.cls = 'math-display'; return block;
+  }
+
+  // 3. Font-size / bold → heading
+  const spans = block.spans || [];
+  if (spans.length) {
+    const avg  = spans.reduce((s, sp) => s + sp.size, 0) / spans.length;
+    const bold = spans.some(sp => sp.bold);
+    if (avg >= 18 || (avg >= 14 && bold && lines.length <= 2)) {
+      const lv = detectHeadingLevel(text) || 1;
+      block.cls = `heading-${lv}`; block.level = lv; return block;
+    }
+    if (avg >= 14 && lines.length <= 2) {
+      block.cls = 'heading-2'; block.level = 2; return block;
+    }
+  }
+
+  // 4. Pattern heading
+  const lv = detectHeadingLevel(text);
+  if (lv && lines.length <= 3) {
+    block.cls = `heading-${lv}`; block.level = lv; return block;
+  }
+
+  // 5. Code
+  if (isCodeBlock(lines)) { block.cls = 'code'; return block; }
+
+  block.cls = 'paragraph';
+  return block;
+}
+
+// ─────────────────────────────────────────────
+// BLOCK → HTML
+// ─────────────────────────────────────────────
+function blockToHtml(block, pageNum) {
+  const cls   = block.cls || 'paragraph';
+  const text  = block.text;
+  const items = block.items || [];
+
+  if (cls === 'image') {
+    return `<figure class="pdf-image"><img src="${block.src}" alt="Figure page ${pageNum}" loading="lazy"></figure>\n`;
+  }
+
+  if (cls === 'code') {
+    return `<div class="code-block notranslate" translate="no"><pre><code>${escapeHtml(text)}</code></pre></div>\n`;
+  }
+
+  if (cls === 'math-display') {
+    // Pure math-font block → use raw text directly
+    const nonSpace = items.filter(it => it.str.trim());
+    if (nonSpace.length > 0 && nonSpace.every(it => isMathFont(it.fontName))) {
+      const raw = items.map(it => it.str).join('');
+      return `<div class="math-block notranslate" translate="no">\\[${escapeHtml(raw.trim())}\\]</div>\n`;
+    }
+    // Has delimiters already
+    const hasDelim = /\\\[|\\\]|\$\$/.test(text);
+    if (!hasDelim) {
+      return `<div class="math-block notranslate" translate="no">\\[${escapeHtml(text.trim())}\\]</div>\n`;
+    }
+    return `<div class="math-block notranslate" translate="no">${extractDelimiterMath(text)}</div>\n`;
+  }
+
+  if (cls.startsWith('heading-')) {
+    const lvl = block.level || 2;
+    const id  = block._id ? ` id="${block._id}"` : '';
+    const safe = extractDelimiterMath(text);
+    return `<h${lvl}${id} class="pdf-heading">${safe}</h${lvl}>\n`;
+  }
+
+  // ── PARAGRAPH: font-aware line-by-line rendering ──
+  if (items.length > 0) {
+    // Re-group items by line (same y-coordinate ±3pt)
+    const lineGroups = [];
+    let curLine = [], curY = null;
+    for (const item of items) {
+      if (curY === null || Math.abs(item.y - curY) <= 3) {
+        curLine.push(item); curY = item.y;
+      } else {
+        if (curLine.length) lineGroups.push([...curLine]);
+        curLine = [item]; curY = item.y;
+      }
+    }
+    if (curLine.length) lineGroups.push(curLine);
+
+    const safe = lineGroups.map(line => lineItemsToHtml(line)).join('<br>\n');
+    return `<p class="pdf-para">${safe}</p>\n`;
+  }
+
+  // Fallback: delimiter-based
+  const safe = extractDelimiterMath(text).replace(/\n/g, '<br>\n');
+  return `<p class="pdf-para">${safe}</p>\n`;
+}
+
+// TOC BUILDER
+// ─────────────────────────────────────────────
+function buildToc(pagesData) {
+  const headings = [];
+  for (const page of pagesData) {
+    for (const block of page.classified || []) {
+      if (block.cls && block.cls.startsWith('heading-')) {
+        headings.push({
+          level: block.level || 2,
+          text:  block.text.trim().slice(0, 80),
+          id:    `h-${headings.length}`,
+        });
+      }
+    }
+  }
+
+  if (headings.length < 2) return { tocHtml: '', headings };
+
+  const items = headings.map(h =>
+    `<a href="#${h.id}" class="toc-h${h.level}">${escapeHtml(h.text)}</a>`
+  );
+
+  const tocHtml =
+    `<nav id="toc-container" aria-label="Table of Contents">`
+    + `<h2>Daftar Isi</h2>`
+    + items.join('\n')
+    + `</nav>`;
+
+  return { tocHtml, headings };
+}
+
+// ─────────────────────────────────────────────
+// HTML TEMPLATE
+// ─────────────────────────────────────────────
+function buildHtmlTemplate({ title, lang, pages, tocHtml, content }) {
+  return `<!DOCTYPE html>
+<html lang="${lang}" translate="yes">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)}</title>
+
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\\\(', '\\\\)'], ['$', '$']],
+        displayMath: [['\\\\[', '\\\\]'], ['$$', '$$']],
+        processEscapes: true,
+        processEnvironments: true,
+        packages: {'[+]': ['ams', 'boldsymbol', 'newcommand']}
+      },
+      options: {
+        skipHtmlTags: ['script','noscript','style','textarea','pre','code'],
+        ignoreHtmlClass: 'code-block'
+      },
+      startup: {
+        ready() { MathJax.startup.defaultReady(); }
+      }
+    };
+  <\/script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" async><\/script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f8f9fa; --surface: #ffffff; --text: #1a1a2e; --text-muted: #555e70;
+      --accent: #2563eb; --accent-light: #dbeafe; --code-bg: #0f172a;
+      --code-text: #e2e8f0; --math-bg: #f0f4ff; --border: #e2e8f0;
+      --heading-1: #1e3a5f; --heading-2: #1e40af; --heading-3: #1d4ed8;
+      --max-width: 860px;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: Georgia, 'Times New Roman', serif; background: var(--bg); color: var(--text); line-height: 1.8; font-size: 17px; -webkit-font-smoothing: antialiased; }
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; position: sticky; top: 0; z-index: 100; }
+    header h1 { font-size: 1.1rem; color: var(--heading-2); font-weight: 700; }
+    .header-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+    main { max-width: var(--max-width); margin: 0 auto; padding: 2rem 1.5rem 4rem; flex: 1; }
+    .pdf-page { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2rem 2.5rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .page-label { font-size: 0.7rem; color: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 1rem; display: block; }
+    h1.pdf-heading { font-size: 1.8rem; color: var(--heading-1); margin: 1.5rem 0 1rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+    h2.pdf-heading { font-size: 1.35rem; color: var(--heading-2); margin: 1.5rem 0 0.75rem; }
+    h3.pdf-heading { font-size: 1.1rem; color: var(--heading-3); margin: 1.25rem 0 0.5rem; }
+    .pdf-para { margin-bottom: 1rem; text-align: justify; }
+    .math-block { background: var(--math-bg); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 1rem 1.5rem; margin: 1rem 0; overflow-x: auto; }
+    .math-display-wrap { display: block; text-align: center; padding: 0.5rem 0; }
+    .math-inline { display: inline; }
+    .code-block { background: var(--code-bg); color: var(--code-text); border-radius: 6px; margin: 1rem 0; overflow: hidden; }
+    .code-block pre { padding: 1.25rem; overflow-x: auto; }
+    .code-block code { font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.6; }
+    .pdf-image { margin: 1rem 0; text-align: center; }
+    .pdf-image img { max-width: 100%; height: auto; border-radius: 4px; }
+    #toc-container { position: fixed; left: 2rem; top: 50%; transform: translateY(-50%); width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.78rem; max-height: 60vh; overflow-y: auto; }
+    #toc-container h2 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); margin-bottom: 0.75rem; }
+    #toc-container a { display: block; color: var(--text-muted); text-decoration: none; padding: 0.2rem 0; border-left: 2px solid transparent; padding-left: 0.5rem; transition: all .15s; }
+    #toc-container a:hover { color: var(--accent); border-left-color: var(--accent); }
+    .toc-h1 { font-weight: 700; color: var(--text) !important; }
+    .toc-h3 { padding-left: 1.5rem !important; }
+    footer { background: var(--surface); border-top: 1px solid var(--border); padding: 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted); }
+    @media (max-width: 1150px) { #toc-container { display: none; } }
+    @media (max-width: 700px) { body { font-size: 15px; } main { padding: 1rem .75rem 3rem; } .pdf-page { padding: 1.5rem 1.1rem; } }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f172a; --surface: #1e293b; --text: #e2e8f0; --text-muted: #94a3b8; --border: #334155; --heading-1: #93c5fd; --heading-2: #60a5fa; --heading-3: #818cf8; --math-bg: #1e2d4a; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 class="notranslate">${escapeHtml(title)}</h1>
+    <div class="header-meta">${pages} halaman &bull; Dikonversi dari PDF</div>
+  </header>
+  ${tocHtml}
+  <main>${content}</main>
+  <footer>Dikonversi oleh <strong>pdf2html</strong> &bull; LaTeX dirender oleh <span>MathJax 3</span></footer>
+</div>
+<script>
+(function() {
+  var observer = new MutationObserver(function() {
+    if (window.MathJax && MathJax.typeset) {
+      clearTimeout(window._mjT);
+      window._mjT = setTimeout(function() { MathJax.typeset(); }, 300);
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+})();
+<\/script>
+</body>
+</html>`;
+}
+
+// ─────────────────────────────────────────────
+// PDF.JS EXTRACTION (with per-item font tracking)
+// ─────────────────────────────────────────────
+async function extractWithPdfJs(pdfDoc, onProgress) {
+  const pagesData = [];
+  const numPages  = pdfDoc.numPages;
+
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    onProgress(pageNum, numPages);
+    const page     = await pdfDoc.getPage(pageNum);
+    const content  = await page.getTextContent({ includeMarkedContent: false });
+    const viewport = page.getViewport({ scale: 1 });
+
+    // Raw items with full font info
+    const rawItems = content.items
+      .filter(it => it.str) // keep even spaces — needed for grouping
+      .map(it => ({
+        str:      it.str,
+        fontName: it.fontName || '',
+        size:     Math.round(Math.abs(it.transform[3]) * 10) / 10,
+        bold:     (it.fontName || '').toLowerCase().includes('bold'),
+        x:        Math.round(it.transform[4]),
+        y:        Math.round(it.transform[5]),
+      }));
+
+    // Sort top-to-bottom, left-to-right
+    rawItems.sort((a, b) => b.y !== a.y ? b.y - a.y : a.x - b.x);
+
+    // Group into logical blocks
+    // A new block starts when y-gap > BLOCK_GAP
+    // Items within ±LINE_GAP y are on the same "line"
+    const LINE_GAP  = 4;
+    const BLOCK_GAP = 12;
+
+    const blocks = [];
+    let curBlock = null;
+    let prevY    = null;
+
+    for (const item of rawItems) {
+      if (!item.str.trim() && curBlock === null) continue; // skip leading spaces
+
+      if (prevY === null || Math.abs(item.y - prevY) > BLOCK_GAP) {
+        // Start new block
+        curBlock = { items: [item], y: item.y };
+        blocks.push(curBlock);
+      } else {
+        curBlock.items.push(item);
+      }
+      prevY = item.y;
+    }
+
+    // Convert blocks to structured objects
+    const processedBlocks = blocks
+      .map(b => {
+        const text  = b.items.map(it => it.str).join('').trim();
+        const spans = b.items.map(it => ({ text: it.str, size: it.size, bold: it.bold, font: it.fontName }));
+        return { type: 'text', text, items: b.items, spans, y: b.y };
+      })
+      .filter(b => b.text);
+
+    pagesData.push({
+      page:   pageNum,
+      items:  processedBlocks,
+      width:  viewport.width,
+      height: viewport.height,
+    });
+  }
+
+  return pagesData;
+}
+
+// ─────────────────────────────────────────────
+// RENDER PAGES
+// ─────────────────────────────────────────────
+function renderPages(pagesData, headingsList) {
+  let hIdx = 0;
+  const parts = [];
+
+  for (const pageInfo of pagesData) {
+    const pageNum = pageInfo.page;
+    const blocks  = pageInfo.classified || [];
+    const lines   = [`<section class="pdf-page" id="page-${pageNum}">`,
+                     `<span class="page-label">Hal. ${pageNum}</span>`];
+
+    for (const block of blocks) {
+      if (block.cls && block.cls.startsWith('heading-')) {
+        const h = headingsList[hIdx];
+        if (h) { block._id = h.id; hIdx++; }
+      }
+      lines.push(blockToHtml(block, pageNum));
+    }
+
+    lines.push('</section>');
+    parts.push(lines.join('\n'));
+  }
+
+  return parts.join('\n\n');
+}
+
+// ─────────────────────────────────────────────
+// MAIN CONVERSION
+// ─────────────────────────────────────────────
+async function startConversion(file) {
+  // Show status
+  dropZone.style.display = 'none';
+  statusBox.classList.add('visible');
+  resultBox.classList.remove('visible');
+  previewWrap.classList.remove('visible');
+  previewVisible = false;
+  logLines.innerHTML = '';
+  setProgress(0);
+  setStatus('Membaca file PDF...', 'loading');
+
+  const fileName = file.name.replace(/\.pdf$/i, '');
+
+  try {
+    // 1. Load PDF
+    log(`File: ${file.name} (${(file.size/1024).toFixed(1)} KB)`);
+    const arrayBuffer = await file.arrayBuffer();
+    setProgress(10);
+
+    log('Memuat PDF.js...', 'ok');
+    const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = pdfDoc.numPages;
+    log(`${numPages} halaman ditemukan`, 'ok');
+    setProgress(20);
+
+    // 2. Extract text
+    setStatus('Mengekstrak teks...', 'loading');
+    const pagesData = await extractWithPdfJs(pdfDoc, (cur, total) => {
+      setProgress(20 + (cur / total) * 40);
+      setStatus(`Mengekstrak halaman ${cur}/${total}...`, 'loading');
+    });
+    log('Ekstraksi teks selesai', 'ok');
+    setProgress(60);
+
+    // 3. Classify blocks
+    setStatus('Mengklasifikasi konten...', 'loading');
+    let totalBlocks = 0;
+    let mathCount = 0;
+    let codeCount = 0;
+    let headingCount = 0;
+
+    for (const page of pagesData) {
+      const classified = page.items.map(block => classifyBlock({ ...block }));
+      page.classified = classified;
+      totalBlocks += classified.length;
+      mathCount   += classified.filter(b => b.cls && b.cls.startsWith('math')).length;
+      codeCount   += classified.filter(b => b.cls === 'code').length;
+      headingCount+= classified.filter(b => b.cls && b.cls.startsWith('heading')).length;
+    }
+
+    log(`${totalBlocks} blok — ${headingCount} judul, ${mathCount} math, ${codeCount} kode`, 'ok');
+    setProgress(70);
+
+    // 4. Build TOC
+    const { tocHtml, headings } = buildToc(pagesData);
+    if (headings.length >= 2) log(`TOC: ${headings.length} entri`, 'ok');
+    setProgress(80);
+
+    // 5. Render HTML
+    setStatus('Merender HTML...', 'loading');
+    const contentHtml = renderPages(pagesData, headings);
+    const fullHtml = buildHtmlTemplate({
+      title:   fileName,
+      lang:    'id',
+      pages:   numPages,
+      tocHtml: tocHtml,
+      content: contentHtml,
+    });
+    setProgress(95);
+
+    // 6. Create download blob
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const htmlFileName = fileName + '.html';
+
+    btnDownload.href     = url;
+    btnDownload.download = htmlFileName;
+
+    // Preview
+    previewFrame.srcdoc = fullHtml;
+
+    // Stats
+    resultFname.textContent = '📄 ' + htmlFileName;
+    resultStats.innerHTML = `
+      <span class="stat-item">📃 ${numPages} hal.</span>
+      <span class="stat-item">🔢 ${mathCount} math</span>
+      <span class="stat-item">💾 ${(blob.size/1024).toFixed(1)} KB</span>
+    `;
+
+    setProgress(100);
+    setStatus('Selesai! HTML siap didownload.', 'done');
+    log(`Output: ${htmlFileName} (${(blob.size/1024).toFixed(1)} KB)`, 'ok');
+
+    resultBox.classList.add('visible');
+
+  } catch (err) {
+    setStatus('Terjadi error: ' + err.message, 'error');
+    log('ERROR: ' + err.message, 'err');
+    console.error(err);
+  }
+}
+</script>
+</body>
+</html>
